@@ -41,6 +41,7 @@
 #include "patch_memory.h"
 #include "symbol_resolver.h"
 #include "susfs_log.h"
+#include "susfs_kprobe.h"	/* SUSFS_SC_WRAPPER_NAME for the log control symbol */
 #include "susfs_fp_hook.h"
 
 /* The BTI landing pad of an indirect call target: 'bti c' (an unallocated HINT
@@ -120,7 +121,7 @@ int susfs_fp_init(void)
 			"(control: jiffies direct=%px, openat walk=%px)\n",
 			direct, walked,
 			(void *)find_kernel_symbol_exact("jiffies"),
-			ksu_resolve_symbol_for_functable_hook("__arm64_sys_openat"));
+			ksu_resolve_symbol_for_functable_hook(SUSFS_SC_WRAPPER_NAME(openat)));
 		return -ENOENT;
 	}
 
@@ -186,6 +187,10 @@ void susfs_fp_dump_wrapper(const char *name, const void *fn)
 
 static bool fp_has_landing_pad(const void *fn)
 {
+#ifdef __x86_64__
+	/* endbr64 under IBT, see SUSFS_LANDING_PAD in susfs_fp_hook.h */
+	return READ_ONCE(*(const u32 *)fn) == SUSFS_LANDING_PAD;
+#else
 	switch (READ_ONCE(*(const u32 *)fn)) {
 	case SUSFS_ARM64_BTI_C:
 	case SUSFS_ARM64_BTI_JC:
@@ -195,6 +200,7 @@ static bool fp_has_landing_pad(const void *fn)
 	default:
 		return false;
 	}
+#endif
 }
 
 int susfs_fp_install(struct susfs_fp_hook *h)
